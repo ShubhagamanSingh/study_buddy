@@ -1,5 +1,6 @@
 import streamlit as st # type: ignore
 from huggingface_hub import InferenceClient # type: ignore
+from huggingface_hub.utils import HfHubHTTPError # type: ignore
 from pymongo import MongoClient # type: ignore
 import hashlib
 from datetime import datetime
@@ -10,6 +11,78 @@ st.set_page_config(
     page_icon="🎓",
     layout="wide"
 )
+
+# --- Custom CSS for Modern UI (consistent with other apps) ---
+st.markdown("""
+<style>
+    .main {
+        background-color: black;
+    }
+    .block-container {
+        padding-top: 2rem;
+    }
+    .header-container {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 3rem 2rem;
+        border-radius: 0 0 25px 25px;
+        margin-bottom: 2rem;
+        margin-top: -2rem;
+        color: white;
+        text-align: center;
+    }
+    .custom-card {
+        background: white;
+        padding: 2rem;
+        border-radius: 20px;
+        border: 1px solid #e0e0e0;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        margin-bottom: 1.5rem;
+        display: none;    
+    }
+    .stButton button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        padding: 0.75rem 2rem;
+        font-weight: 600;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        width: 100%;
+    }
+    .stButton button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+    }
+    /* Style for input widgets */
+    .stTextInput input, .stTextArea textarea, .stNumberInput input, .stSelectbox div[data-baseweb="select"] {
+        border-radius: 10px;
+        border: 2px solid #e0e0e0;        
+    }
+    .stSelectbox div[data-baseweb="select"] > div {
+        color: #fff; /* Ensure text inside selectbox is visible */
+    }
+    .stTextInput input:focus, .stTextArea textarea:focus, .stNumberInput input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    .info-message {
+        background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 15px;
+        text-align: center;
+        margin: 1rem 0;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 44px;
+        background-color: transparent;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # --- User Authentication and Data Management ---
 # --- MongoDB Connection ---
@@ -86,6 +159,13 @@ def generate_ai_response(system_prompt, user_prompt):
             # Add a check to ensure the choices list is not empty before accessing it
             if chunk.choices and chunk.choices[0].delta.content:
                 response_text += chunk.choices[0].delta.content
+    except HfHubHTTPError as e:
+        # Specifically handle the 402 Payment Required error for monthly limits
+        if e.response.status_code == 402:
+            st.error("Sorry, we've reached our monthly usage limit for the AI model. Please check back later or contact the administrator.", icon="😔")
+            return "The AI service is temporarily unavailable due to usage limits."
+        st.error(f"An error occurred while communicating with the AI model: {e}", icon="💔")
+        return "Sorry, I couldn't generate a response at this moment. Please try again later."
     except Exception as e:
         st.error(f"An error occurred while communicating with the AI model: {e}", icon="💔")
         return "Sorry, I couldn't generate a response at this moment. Please try again later."
@@ -94,10 +174,14 @@ def generate_ai_response(system_prompt, user_prompt):
 
 def display_ai_output(response_text):
     """Displays the AI-generated text with a copy button."""
-    st.markdown("---")
-    st.subheader("✨ AI Response")
-    st.markdown(response_text)
-    st.code(response_text, language="markdown")
+    st.markdown("""
+    <div class="custom-card" style="background: #f9f9f9;">
+        <h3 style="color: #fff;">✨ AI Response</h3>
+    """, unsafe_allow_html=True)
+    st.markdown(response_text, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.download_button("⬇️ Download Response", response_text, file_name="study_buddy_response.txt", use_container_width=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def display_explainer_tool():
     """Renders the UI for the 'Explain a Topic' tool."""
@@ -105,7 +189,7 @@ def display_explainer_tool():
     with st.form("explainer_form"):
         topic = st.text_input("What topic do you want to understand?", placeholder="e.g., Photosynthesis, Python Dictionaries, The Cold War")
         style = st.selectbox("How should I explain it?", ["Like I'm 10 years old", "In a simple paragraph", "With detailed bullet points"])
-        submit = st.form_submit_button("✨ Explain It!", use_container_width=True)
+        submit = st.form_submit_button("✨ Explain It!", use_container_width=True, type="primary")
 
     if submit and topic:
         user_prompt = f"Explain the topic: '{topic}' in the style of '{style}'."
@@ -124,7 +208,7 @@ def display_summarizer_tool():
     with st.form("summarizer_form"):
         notes = st.text_area("Paste your notes here:", height=250, placeholder="Paste a long article or your study notes...")
         length = st.selectbox("How long should the summary be?", ["A few key bullet points", "A short paragraph", "A detailed summary"])
-        submit = st.form_submit_button("✨ Summarize It!", use_container_width=True)
+        submit = st.form_submit_button("✨ Summarize It!", use_container_width=True, type="primary")
 
     if submit and notes:
         user_prompt = f"Summarize the following text into '{length}':\n\n{notes}"
@@ -146,7 +230,7 @@ def display_quiz_tool():
     with st.form("quiz_form"):
         topic_or_notes = st.text_area("What is the quiz about? (Enter a topic or paste notes)", height=200, placeholder="e.g., The Solar System, or paste your notes on cell biology here...")
         num_questions = st.slider("How many questions?", 3, 10, 5)
-        submit = st.form_submit_button("✨ Create Quiz!", use_container_width=True)
+        submit = st.form_submit_button("✨ Create Quiz!", use_container_width=True, type="primary")
 
     if submit and topic_or_notes:
         user_prompt = f"Generate a quiz with {num_questions} multiple-choice questions based on the following information:\n\n{topic_or_notes}\n\nProvide an answer key at the very end, clearly separated from the questions."
@@ -168,7 +252,7 @@ def display_flashcard_tool():
     with st.form("flashcard_form"):
         topic_or_notes = st.text_area("What are the flashcards about? (Enter a topic or paste notes)", height=200, placeholder="e.g., Key terms from Biology Chapter 5, or paste your notes here...")
         num_flashcards = st.slider("How many flashcards?", 3, 15, 5)
-        submit = st.form_submit_button("✨ Create Flashcards!", use_container_width=True)
+        submit = st.form_submit_button("✨ Create Flashcards!", use_container_width=True, type="primary")
 
     if submit and topic_or_notes:
         user_prompt = f"Generate {num_flashcards} flashcards from the following information. For each flashcard, provide a 'Term' and a 'Definition'.\n\nInformation:\n{topic_or_notes}"
@@ -183,105 +267,163 @@ def display_flashcard_tool():
 
 def display_history():
     """Renders the user's interaction history."""
-    st.header("Your Study History")
+    st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+    st.markdown('<h2 style="text-align: center; color: #fff;">Your Study History</h2>', unsafe_allow_html=True)
     user_data = users_collection.find_one({"_id": st.session_state.username})
     user_history = user_data.get("history", []) if user_data else []
 
     if not user_history:
-        st.info("You have no saved interactions yet. Use a study tool to see your history here!")
+        st.info("You have no saved interactions yet. Use a study tool to see your history here!", icon="📚")
     else:
         for i, entry in enumerate(user_history):
             expander_title = f"{entry['type']} from {entry['date']}"
             with st.expander(expander_title):
-                st.write(f"**Interaction Type:** {entry['type']}")
+                st.markdown(f"**Interaction Type:** {entry['type']}")
                 if isinstance(entry.get('input'), dict):
-                    st.write("**Your Input:**")
+                    st.markdown("**Your Input:**")
                     for key, value in entry['input'].items():
                         st.caption(f"{key.replace('_', ' ').capitalize()}: {value}")
                 elif entry.get('input'):
-                     st.write(f"**Your Input:** {entry['input']}")
+                     st.markdown(f"**Your Input:** {entry['input']}")
 
                 st.markdown("---")
-                st.write("**AI Response:**")
+                st.markdown("**AI Response:**")
                 st.markdown(entry["response"])
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def display_modern_header():
+    """Display modern header with gradient"""
+    st.markdown("""
+    <div class="header-container">
+        <h1 style="margin:0; font-size: 3rem; font-weight: 700;">🎓 AI Study Buddy</h1>
+        <p style="margin:0; font-size: 1.3rem; opacity: 0.9; margin-top: 0.5rem;">
+        Your personal AI tutor for explaining, summarizing, and quizzing.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+def display_modern_auth():
+    """Display modern authentication in sidebar"""
+    with st.sidebar:
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <h2 style="color: #667eea; margin: 0;">Study Buddy</h2>
+            <p style="color: #666; margin: 0;">AI Tutor</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not st.session_state.logged_in:
+            tab1, tab2 = st.tabs(["🔐 Login", "📝 Register"])
+
+            with tab1:
+                username = st.text_input("Username", key="login_user")
+                password = st.text_input("Password", type="password", key="login_pass")
+
+                if st.button("Login", use_container_width=True):
+                    if username and password:
+                        user_data = users_collection.find_one({"_id": username})
+                        if user_data and verify_password(user_data["password"], password):
+                            st.session_state.logged_in = True
+                            st.session_state.username = username
+                            st.rerun()
+                        else:
+                            st.error("Invalid username or password")
+                    else:
+                        st.warning("Please enter username and password")
+
+            with tab2:
+                username = st.text_input("Username", key="reg_user")
+                password = st.text_input("Password", type="password", key="reg_pass")
+
+                if st.button("Register", use_container_width=True):
+                    if username and password:
+                        if users_collection.find_one({"_id": username}):
+                            st.error("Username already exists")
+                        else:
+                            users_collection.insert_one({
+                                "_id": username,
+                                "password": hash_password(password),
+                                "history": []
+                            })
+                            st.success("Registration successful! Please login.")
+                    else:
+                        st.warning("Please fill all fields")
+        else:
+            st.markdown(f"""
+            <div class="custom-card" style="background: #f0f2f6;">
+                <h4 style="color: #667eea; margin: 0;">Welcome back!</h4>
+                <p style="margin: 0.5rem 0; color: #666;">{st.session_state.username}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if st.button("Logout", use_container_width=True):
+                st.session_state.logged_in = False
+                st.session_state.username = ""
+                st.rerun()
 
 # --- Main App Interface ---
-st.title("🎓 Study Buddy")
+display_modern_header()
 
 # --- Authentication UI ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
 
+display_modern_auth()
+
 if not st.session_state.logged_in:
-    st.sidebar.title("Login / Register")
-    choice = st.sidebar.radio("Choose an action", ["Login", "Register"])
-
-    username = st.sidebar.text_input("Username")
-    password = st.sidebar.text_input("Password", type="password")
-
-    if choice == "Register":
-        if st.sidebar.button("Register"):
-            if username and password:
-                # Check if user already exists
-                if users_collection.find_one({"_id": username}):
-                    st.sidebar.error("Username already exists.")
-                else:
-                    users_collection.insert_one({
-                        "_id": username,
-                        "password": hash_password(password),
-                        "history": []
-                    })
-                    st.sidebar.success("Registration successful! Please log in.")
-            else:
-                st.sidebar.warning("Please enter a username and password.")
-
-    if choice == "Login":
-        if st.sidebar.button("Login"):
-            if username and password:
-                user_data = users_collection.find_one({"_id": username})
-                if user_data and verify_password(user_data["password"], password):
-                    st.session_state.logged_in = True
-                    st.session_state.username = username
-                    st.rerun() # Rerun the script to show the main app
-                else:
-                    st.sidebar.error("Invalid username or password.")
-            else:
-                st.sidebar.warning("Please enter your username and password.")
-
-    st.info("Please log in or register to use your Study Buddy. Open the sidebar by clicking the top-left icon.", icon="👈")
+    st.markdown("""
+    <div class="custom-card">
+        <h2 style="text-align: center; color: #fff; margin-bottom: 2rem;">Welcome to Your AI Study Buddy! 👋</h2>
+        <p style="text-align: center; font-size: 1.2rem; color: #666; line-height: 1.6;">
+        Unlock your learning potential with AI-powered tools. Explain complex topics, summarize long notes, create quizzes, and generate flashcards instantly.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("""
+    <div class="info-message">
+        <p style="margin: 0; font-size: 1.1rem;">
+        👈 <strong>Get Started:</strong> Please login or register in the sidebar to begin!
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 # --- Main Application ---
 if st.session_state.logged_in:
-    st.sidebar.title(f"Welcome, {st.session_state.username}! 👋")
-    if st.sidebar.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.username = ""
-        st.rerun()
-
     # --- Main Application Tabs ---
     tool_tab, history_tab = st.tabs(["🧠 Study Tools", "📜 History"])
 
     with tool_tab:
-        st.header("What would you like to do today?")
+        st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+        st.markdown('<h2 style="text-align: center; color: #fff;">What would you like to do today?</h2>', unsafe_allow_html=True)
 
-        # --- Tool Selection ---
-        tool_choice = st.radio(
-            "Select a tool:",
-            ["Explain a Topic", "Summarize My Notes", "Generate a Quiz", "Generate Flashcards"],
-            horizontal=True,
-            label_visibility="collapsed"
-        )
+        # --- Tool Selection in a more modern way ---
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔬 Explain a Topic", use_container_width=True):
+                st.session_state.tool_choice = "Explain a Topic"
+            if st.button("📝 Generate a Quiz", use_container_width=True):
+                st.session_state.tool_choice = "Generate a Quiz"
+        with col2:
+            if st.button("✍️ Summarize Notes", use_container_width=True):
+                st.session_state.tool_choice = "Summarize My Notes"
+            if st.button("🃏 Create Flashcards", use_container_width=True):
+                st.session_state.tool_choice = "Generate Flashcards"
 
-        # --- Display the selected tool's UI ---
-        if tool_choice == "Explain a Topic":
-            display_explainer_tool()
-        elif tool_choice == "Summarize My Notes":
-            display_summarizer_tool()
-        elif tool_choice == "Generate a Quiz":
-            display_quiz_tool()
-        elif tool_choice == "Generate Flashcards":
-            display_flashcard_tool()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # --- Display the selected tool's UI in its own card ---
+        if 'tool_choice' in st.session_state:
+            st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+            if st.session_state.tool_choice == "Explain a Topic":
+                display_explainer_tool()
+            elif st.session_state.tool_choice == "Summarize My Notes":
+                display_summarizer_tool()
+            elif st.session_state.tool_choice == "Generate a Quiz":
+                display_quiz_tool()
+            elif st.session_state.tool_choice == "Generate Flashcards":
+                display_flashcard_tool()
+            st.markdown('</div>', unsafe_allow_html=True)
 
     with history_tab:
         display_history()
