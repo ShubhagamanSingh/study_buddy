@@ -318,7 +318,7 @@ def display_modern_auth():
             with tab1:
                 username = st.text_input("Username", key="login_user")
                 password = st.text_input("Password", type="password", key="login_pass")
-
+                
                 if st.button("Login", use_container_width=True):
                     if username and password:
                         user_data = users_collection.find_one({"_id": username})
@@ -334,18 +334,21 @@ def display_modern_auth():
             with tab2:
                 username = st.text_input("Username", key="reg_user")
                 password = st.text_input("Password", type="password", key="reg_pass")
-
+                confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_pass")
                 if st.button("Register", use_container_width=True):
                     if username and password:
-                        if users_collection.find_one({"_id": username}):
-                            st.error("Username already exists")
+                        if password == confirm_password:
+                            if users_collection.find_one({"_id": username}):
+                                st.error("Username already exists")
+                            else:
+                                users_collection.insert_one({
+                                    "_id": username,
+                                    "password": hash_password(password),
+                                    "history": []
+                                })
+                                st.success("Registration successful! Please login.")
                         else:
-                            users_collection.insert_one({
-                                "_id": username,
-                                "password": hash_password(password),
-                                "history": []
-                            })
-                            st.success("Registration successful! Please login.")
+                            st.error("Passwords do not match")
                     else:
                         st.warning("Please fill all fields")
         else:
